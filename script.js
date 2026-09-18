@@ -1,6 +1,6 @@
 /* ==========================================
-   J.A.R.V.I.S v1.0
-   Personal Task Assistant
+   J.A.R.V.I.S v2.0
+   AI Personal Assistant
    ========================================== */
 
 const STORAGE_KEYS = {
@@ -9,7 +9,7 @@ const STORAGE_KEYS = {
 };
 
 let tasks = JSON.parse(localStorage.getItem(STORAGE_KEYS.tasks)) || [];
-let notes = JSON.parse(localStorage.getItem(STORAGE_KEYS.notes)) || [];
+let notes = JSON.parse(localStorage.getItem(STORAGE_KEYS.notes)) ||;
 
 
 /* ---------- DOM ---------- */
@@ -80,11 +80,17 @@ setInterval(updateClock, 1000);
 /* ---------- Storage ---------- */
 
 function saveTasks() {
-  localStorage.setItem(STORAGE_KEYS.tasks, JSON.stringify(tasks));
+  localStorage.setItem(
+    STORAGE_KEYS.tasks,
+    JSON.stringify(tasks)
+  );
 }
 
 function saveNotes() {
-  localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(notes));
+  localStorage.setItem(
+    STORAGE_KEYS.notes,
+    JSON.stringify(notes)
+  );
 }
 
 
@@ -104,6 +110,412 @@ function showToast(message) {
 
 function renderTasks() {
   taskList.innerHTML = "";
+
+  if (tasks.length === 0) {
+    taskList.innerHTML = `
+      <div class="empty">
+        No tasks yet.
+      </div>
+    `;
+  } else {
+    tasks.forEach(task => {
+      const item = document.createElement("div");
+
+      item.className =
+        `task ${task.completed ? "completed" : ""}`;
+
+      item.innerHTML = `
+        <input
+          class="task-check"
+          type="checkbox"
+          ${task.completed ? "checked" : ""}
+        >
+
+        <span class="task-text"></span>
+
+        <button class="delete-task">
+          ×
+        </button>
+      `;
+
+      item.querySelector(".task-text").textContent =
+        task.text;
+
+      item.querySelector(".task-check")
+        .addEventListener("change", () => {
+
+          task.completed = !task.completed;
+
+          saveTasks();
+          renderTasks();
+        });
+
+      item.querySelector(".delete-task")
+        .addEventListener("click", () => {
+
+          tasks = tasks.filter(
+            t => t.id !== task.id
+          );
+
+          saveTasks();
+          renderTasks();
+
+          showToast("Task deleted.");
+        });
+
+      taskList.appendChild(item);
+    });
+  }
+
+  updateStats();
+}
+
+function addTask(text) {
+  text = text.trim();
+
+  if (!text) return false;
+
+  tasks.unshift({
+    id: Date.now(),
+    text,
+    completed: false,
+    createdAt: new Date().toISOString()
+  });
+
+  saveTasks();
+  renderTasks();
+
+  return true;
+}
+
+taskForm.addEventListener("submit", event => {
+  event.preventDefault();
+
+  if (addTask(taskInput.value)) {
+    taskInput.value = "";
+    showToast("Task added.");
+  }
+});
+
+clearCompleted.addEventListener("click", () => {
+
+  tasks = tasks.filter(
+    task => !task.completed
+  );
+
+  saveTasks();
+  renderTasks();
+
+  showToast("Completed tasks cleared.");
+});
+
+
+/* ---------- Notes ---------- */
+
+function renderNotes() {
+  noteList.innerHTML = "";
+
+  if (notes.length === 0) {
+    noteList.innerHTML = `
+      <div class="empty">
+        No saved notes.
+      </div>
+    `;
+  } else {
+    notes.forEach(note => {
+
+      const item = document.createElement("div");
+
+      item.className = "note";
+
+      item.innerHTML = `
+        <strong></strong>
+        <br>
+        <span></span>
+      `;
+
+      item.querySelector("strong").textContent =
+        new Date(note.createdAt).toLocaleDateString();
+
+      item.querySelector("span").textContent =
+        note.text;
+
+      noteList.appendChild(item);
+    });
+  }
+
+  noteCount.textContent = notes.length;
+}
+
+saveNote.addEventListener("click", () => {
+
+  const text = noteInput.value.trim();
+
+  if (!text) {
+    showToast("Write something first.");
+    return;
+  }
+
+  notes.unshift({
+    id: Date.now(),
+    text,
+    createdAt: new Date().toISOString()
+  });
+
+  saveNotes();
+  renderNotes();
+
+  noteInput.value = "";
+
+  showToast("Note saved.");
+});
+
+
+/* ---------- Stats ---------- */
+
+function updateStats() {
+
+  const active =
+    tasks.filter(task => !task.completed).length;
+
+  const completed =
+    tasks.filter(task => task.completed).length;
+
+  taskCount.textContent = active;
+  completedCount.textContent = completed;
+}
+
+
+/* ---------- Chat ---------- */
+
+function addMessage(text, sender = "jarvis") {
+
+  const message = document.createElement("div");
+
+  message.className =
+    sender === "user"
+      ? "message user-message"
+      : "message jarvis-message";
+
+  message.innerHTML = `
+    <div class="avatar">
+      ${sender === "user" ? "U" : "J"}
+    </div>
+
+    <div class="bubble"></div>
+  `;
+
+  message.querySelector(".bubble").textContent =
+    text;
+
+  chatWindow.appendChild(message);
+
+  chatWindow.scrollTop =
+    chatWindow.scrollHeight;
+}
+
+
+/* ---------- AI ---------- */
+
+async function askJarvis(message) {
+
+  addMessage(message, "user");
+
+  const thinking = document.createElement("div");
+
+  thinking.className =
+    "message jarvis-message";
+
+  thinking.innerHTML = `
+    <div class="avatar">J</div>
+    <div class="bubble">Thinking...</div>
+  `;
+
+  chatWindow.appendChild(thinking);
+
+  chatWindow.scrollTop =
+    chatWindow.scrollHeight;
+
+  try {
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify({
+        message,
+        tasks,
+        notes
+      })
+    });
+
+    const data = await response.json();
+
+    thinking.remove();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || "Request failed."
+      );
+    }
+
+    addMessage(data.reply);
+
+    speak(data.reply);
+
+  } catch (error) {
+
+    thinking.remove();
+
+    console.error(error);
+
+    const message =
+      "I couldn't connect to my AI system. Please check the Vercel configuration.";
+
+    addMessage(message);
+
+    showToast("AI connection error.");
+  }
+}
+
+
+/* ---------- Commands ---------- */
+
+commandForm.addEventListener("submit", event => {
+
+  event.preventDefault();
+
+  const message =
+    commandInput.value.trim();
+
+  if (!message) return;
+
+  commandInput.value = "";
+
+  askJarvis(message);
+});
+
+
+/* ---------- Quick Actions ---------- */
+
+document
+  .querySelectorAll(".quick-actions button")
+  .forEach(button => {
+
+    button.addEventListener("click", () => {
+
+      const command =
+        button.dataset.command;
+
+      if (command === "Add task") {
+        taskInput.focus();
+        return;
+      }
+
+      askJarvis(command);
+    });
+  });
+
+
+/* ---------- Voice Input ---------- */
+
+const SpeechRecognition =
+  window.SpeechRecognition ||
+  window.webkitSpeechRecognition;
+
+let recognition = null;
+
+if (SpeechRecognition) {
+
+  recognition =
+    new SpeechRecognition();
+
+  recognition.lang = "en-IN";
+
+  recognition.continuous = false;
+
+  recognition.interimResults = false;
+
+  recognition.onstart = () => {
+
+    voiceButton.textContent = "🔴";
+
+    showToast("Listening...");
+  };
+
+  recognition.onend = () => {
+
+    voiceButton.textContent = "🎙";
+  };
+
+  recognition.onerror = () => {
+
+    voiceButton.textContent = "🎙";
+
+    showToast("Voice input error.");
+  };
+
+  recognition.onresult = event => {
+
+    const transcript =
+      event.results[0][0].transcript;
+
+    commandInput.value =
+      transcript;
+
+    askJarvis(transcript);
+  };
+
+  voiceButton.addEventListener(
+    "click",
+    () => recognition.start()
+  );
+
+} else {
+
+  voiceButton.addEventListener(
+    "click",
+    () => {
+      showToast(
+        "Voice input is not supported here."
+      );
+    }
+  );
+}
+
+
+/* ---------- Voice Output ---------- */
+
+function speak(text) {
+
+  if (!("speechSynthesis" in window)) {
+    return;
+  }
+
+  speechSynthesis.cancel();
+
+  const utterance =
+    new SpeechSynthesisUtterance(text);
+
+  utterance.rate = 0.95;
+  utterance.pitch = 0.9;
+  utterance.volume = 1;
+
+  speechSynthesis.speak(utterance);
+}
+
+
+/* ---------- Init ---------- */
+
+renderTasks();
+renderNotes();
+
+console.log(
+  "J.A.R.V.I.S v2.0 initialized."
+);  taskList.innerHTML = "";
 
   if (tasks.length === 0) {
     taskList.innerHTML = `
